@@ -90,6 +90,12 @@ if [ -n "$PARENT_REPO" ]; then
     "./sandy -N git -C \"$PARENT_REPO\" status --porcelain | grep -q -E \"^( D|D ) .*dot_ssh\""
 fi
 
+# 11. Test VS Code wrapper fails with security error
+if command -v code >/dev/null 2>&1; then
+  run_test "Running code inside sandbox is disabled" \
+    '[ "$(./sandy code 2>&1)" = "Error: Running code inside the sandy sandbox is disabled to prevent running it without its default sandbox protection." ]'
+fi
+
 if [ "$failed" -eq 0 ]; then
   echo -e "\n${GREEN}All tests passed!${NC}"
   exit 0
