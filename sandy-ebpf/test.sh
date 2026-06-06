@@ -2,19 +2,16 @@
 
 set -euo pipefail
 
-# Helper to run commands with sudo if not already root
-run_sudo() {
-  if [ "$EUID" -ne 0 ]; then
-    sudo "$@"
-  else
-    "$@"
-  fi
-}
+# Ensure the script is run as root
+if [ "$EUID" -ne 0 ]; then
+  echo "Error: Please run as root (sudo ./test.sh)" >&2
+  exit 1
+fi
 
 # Verify the map exists
 MAP_PATH="/sys/fs/bpf/sandy/bootstrap_pids"
-if ! run_sudo test -e "$MAP_PATH"; then
-  echo "Error: eBPF program is not loaded. Please run ./install.sh first." >&2
+if [ ! -e "$MAP_PATH" ]; then
+  echo "Error: eBPF program is not loaded. Please run sudo ./install.sh first." >&2
   exit 1
 fi
 
@@ -31,7 +28,7 @@ echo "Sandbox Shell PID: $SHELL_PID"
 key_bytes=$(printf "%08x" $SHELL_PID | sed 's/\(..\)\(..\)\(..\)\(..\)/\4 \3 \2 \1/')
 
 # Register PID in the eBPF map
-run_sudo bpftool map update pinned "$MAP_PATH" key $key_bytes value 01
+bpftool map update pinned "$MAP_PATH" key $key_bytes value 01
 
 # Helper to send a command to the test shell and read output/error
 run_cmd_in_shell() {
@@ -46,7 +43,7 @@ run_cmd_in_shell() {
       return "${BASH_REMATCH[1]}"
     fi
     echo "$line"
-  done
+  fi
 }
 
 echo "------------------------------------------------"
@@ -106,7 +103,7 @@ else
 fi
 
 # Cleanup BPF map (should already be deleted by eBPF program during bootstrap)
-run_sudo bpftool map delete pinned "$MAP_PATH" key $key_bytes 2>/dev/null || true
+bpftool map delete pinned "$MAP_PATH" key $key_bytes 2>/dev/null || true
 
 # Kill background shell
 kill "$SHELL_PID" 2>/dev/null || true
