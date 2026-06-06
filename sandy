@@ -3,6 +3,9 @@
 # Exit immediately if a command exits with a non-zero status
 set -euo pipefail
 
+cd "$(dirname "$(readlink -f $0)")"
+
+
 # Check if bwrap is installed
 if ! command -v bwrap >/dev/null 2>&1; then
   echo "Error: bubblewrap (bwrap) is not installed." >&2
