@@ -79,6 +79,13 @@ run_test "File created in sandbox is visible on host" \
   './sandy touch "$HOME/sandy-test-visibility-check" && [ -f "$HOME/sandy-test-visibility-check" ]'
 rm -f "$HOME/sandy-test-visibility-check"
 
+# 9. Test git status inside sandbox does not report dot_ssh files as deleted
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+if [ -n "$REPO_ROOT" ]; then
+  run_test "Git status does not show hidden dot_ssh files as deleted" \
+    "! (./sandy git -C \"$REPO_ROOT\" status --porcelain | grep -E \"^( D|D ) .*dot_ssh\")"
+fi
+
 if [ "$failed" -eq 0 ]; then
   echo -e "\n${GREEN}All tests passed!${NC}"
   exit 0

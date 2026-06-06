@@ -31,10 +31,13 @@ bwrap_args=(
   --bind "$real_home" "$real_home"
 )
 
+hidden_paths=()
+
 # Hide .ssh if it exists by mounting a tmpfs over its real path
 if [ -e "$HOME/.ssh" ] || [ -L "$HOME/.ssh" ]; then
   real_ssh=$(readlink -f "$HOME/.ssh")
   bwrap_args+=(--tmpfs "$real_ssh")
+  hidden_paths+=("$real_ssh")
 fi
 
 # Populate whitelisted entries from ~/.config
@@ -63,15 +66,106 @@ if [ -d "$HOME/.config" ]; then
       else
         bwrap_args+=(--bind "$entry" "$dest")
       fi
+    else
+      hidden_paths+=("$(readlink -f "$entry")")
     fi
   done
 fi
 
+# Create a temporary directory for the git wrapper script
+sandy_temp_bin_dir=$(mktemp -d /tmp/sandy-bin.XXXXXX)
+
+# Register cleanup on exit
+cleanup() {
+  rm -rf "$sandy_temp_bin_dir"
+}
+trap cleanup EXIT
+
+# Write the git wrapper script
+cat << 'EOF' > "$sandy_temp_bin_dir/git"
+#!/usr/bin/env bash
+REAL_GIT=$(type -ap git | grep -v "/tmp/sandy-bin" | head -n 1)
+
+if [ -z "$REAL_GIT" ]; then
+  echo "Error: git command not found." >&2
+  exit 127
+fi
+
+# Parse git options to find the correct repository path
+git_opts=()
+i=1
+while [ $i -le $# ]; do
+  eval "val=\${$i}"
+  case "$val" in
+    -C)
+      next=$((i + 1))
+      eval "path=\${$next}"
+      git_opts+=("-C" "$path")
+      i=$((i + 2))
+      ;;
+    --git-dir=*)
+      git_opts+=("$val")
+      i=$((i + 1))
+      ;;
+    --work-tree=*)
+      git_opts+=("$val")
+      i=$((i + 1))
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if ! REPO_PATH=$("$REAL_GIT" "${git_opts[@]}" rev-parse --show-toplevel 2>/dev/null); then
+  exec "$REAL_GIT" "$@"
+fi
+
+FOUND_HIDDEN=false
+for hidden in $SANDY_HIDDEN_DIRS; do
+  if [[ "$hidden" == "$REPO_PATH"/* ]] || [ "$hidden" = "$REPO_PATH" ]; then
+    FOUND_HIDDEN=true
+    break
+  fi
+done
+
+if [ "$FOUND_HIDDEN" = false ]; then
+  exec "$REAL_GIT" "$@"
+fi
+
+TEMP_INDEX="/tmp/sandy-git-index-$(echo -n "$REPO_PATH" | tr '/' '_')"
+REAL_INDEX="$REPO_PATH/.git/index"
+
+if [ -f "$REAL_INDEX" ]; then
+  if [ ! -f "$TEMP_INDEX" ] || [ "$REAL_INDEX" -nt "$TEMP_INDEX" ]; then
+    cp "$REAL_INDEX" "$TEMP_INDEX"
+    for hidden in $SANDY_HIDDEN_DIRS; do
+      if [[ "$hidden" == "$REPO_PATH"/* ]] || [ "$hidden" = "$REPO_PATH" ]; then
+        rel_path="${hidden#$REPO_PATH/}"
+        if [ "$hidden" = "$REPO_PATH" ]; then
+          rel_path="."
+        fi
+        "$REAL_GIT" --git-dir="$REPO_PATH/.git" --work-tree="$REPO_PATH" ls-files -z "$rel_path" | \
+          GIT_INDEX_FILE="$TEMP_INDEX" xargs -0 -r "$REAL_GIT" --git-dir="$REPO_PATH/.git" --work-tree="$REPO_PATH" update-index --skip-worktree
+      fi
+    done
+  fi
+  export GIT_INDEX_FILE="$TEMP_INDEX"
+fi
+
+exec "$REAL_GIT" "$@"
+EOF
+chmod +x "$sandy_temp_bin_dir/git"
+
+# Export variables for the git wrapper
+export PATH="$sandy_temp_bin_dir:$PATH"
+export SANDY_HIDDEN_DIRS="${hidden_paths[*]:-}"
+
 # Run bubblewrap
 if [ $# -eq 0 ]; then
-  exec bwrap "${bwrap_args[@]}" /bin/bash
+  bwrap "${bwrap_args[@]}" /bin/bash
 elif [[ "$1" == -* ]]; then
-  exec bwrap "${bwrap_args[@]}" /bin/bash "$@"
+  bwrap "${bwrap_args[@]}" /bin/bash "$@"
 else
-  exec bwrap "${bwrap_args[@]}" "$@"
+  bwrap "${bwrap_args[@]}" "$@"
 fi
