@@ -47,7 +47,8 @@ sudo rm -rf /sys/fs/bpf/sandy
 Verify the kernel-level restrictions by running the test script:
 
 ```bash
-sudo ./test.sh
+# Run the test script (will request sudo only for writing to the BPF map)
+./test.sh
 ```
 
 The test script:
