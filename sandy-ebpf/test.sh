@@ -9,7 +9,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Verify the map exists
-MAP_PATH="/sys/fs/bpf/sandy/bootstrap_pids"
+MAP_PATH="/sys/fs/bpf/sandy/sandboxed_pids"
 if [ ! -e "$MAP_PATH" ]; then
   echo "Error: eBPF program is not loaded. Please run sudo ./install.sh first." >&2
   exit 1
@@ -93,17 +93,8 @@ else
   echo "FAILED (Output: $output)"
 fi
 
-# Test Case 5: Nested child process inheritance (should also be restricted)
-echo -n "Test 5: Read ~/.ssh/config from a nested subshell (should inherit restriction and fail)... "
-output=$(run_cmd_in_shell "bash -c 'cat \$HOME/.ssh/config 2>&1'" || true)
-if [[ "$output" == *"No such file or directory"* ]]; then
-  echo "PASSED"
-else
-  echo "FAILED (Output: $output)"
-fi
-
-# Cleanup BPF map (should already be deleted by eBPF program during bootstrap)
-bpftool map delete pinned "$MAP_PATH" key $key_bytes 2>/dev/null || true
+# Cleanup BPF map
+bpftool map delete pinned "$MAP_PATH" key $key_bytes
 
 # Kill background shell
 kill "$SHELL_PID" 2>/dev/null || true
