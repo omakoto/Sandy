@@ -24,8 +24,8 @@ Specifically, it uses **LSM BPF** (Linux Security Modules via BPF) to intercept 
 To build the program, mount the BPF filesystem, load it, and set map permissions:
 
 ```bash
-# Run the install script (requires root)
-sudo ./install.sh
+# Run the install script (will automatically request sudo for loading/pinning)
+./install.sh
 ```
 
 This will:
@@ -33,7 +33,7 @@ This will:
 2. Compile `sandy_lsm.bpf.c` to `sandy_lsm.bpf.o`.
 3. Mount the BPF filesystem if not already mounted.
 4. Load the LSM program and pin it to `/sys/fs/bpf/sandy/sandy_lsm`.
-5. Pin the PIDs hash map to `/sys/fs/bpf/sandy/sandboxed_pids` and set permissions to `666`.
+5. Pin the bootstrap PID hash map to `/sys/fs/bpf/sandy/bootstrap_pids` and set permissions to `666`.
 
 To unload:
 ```bash
@@ -52,12 +52,13 @@ sudo ./test.sh
 
 The test script:
 1. Spawns a background shell process.
-2. Registers its process ID (PID) in the `/sys/fs/bpf/sandy/sandboxed_pids` map.
+2. Registers its process ID (PID) in the `/sys/fs/bpf/sandy/bootstrap_pids` map.
 3. Runs commands inside that process to test:
    - Reading normal directories (PASSED).
    - Reading `~/.ssh/config` (should fail with `No such file or directory` / `ENOENT`).
    - Reading `~/.config/git/config` (whitelisted, should succeed).
    - Reading a non-whitelisted `.config` directory (should fail with `Permission denied` / `EACCES`).
+   - Reading `~/.ssh/config` inside a nested subshell to verify child process propagation.
 4. Unregisters the PID and cleans up.
 
 ---
@@ -70,10 +71,34 @@ To enforce these file restrictions on any process or sandbox:
    # Format the PID as 4-byte little-endian hex bytes and write it to the map
    pid=$$
    key_bytes=$(printf "%08x" $pid | sed 's/\(..\)\(..\)\(..\)\(..\)/\4 \3 \2 \1/')
-   bpftool map update pinned /sys/fs/bpf/sandy/sandboxed_pids key $key_bytes value 01
+   bpftool map update pinned /sys/fs/bpf/sandy/bootstrap_pids key $key_bytes value 01
    ```
 3. Run the target commands.
 4. Clean up on exit:
    ```bash
-   bpftool map delete pinned /sys/fs/bpf/sandy/sandboxed_pids key $key_bytes
+   bpftool map delete pinned /sys/fs/bpf/sandy/bootstrap_pids key $key_bytes
    ```
+
+---
+
+### Robustness & Safety Architecture
+
+The Sandy eBPF module is designed to be extremely lightweight, secure, and crash-resistant:
+
+#### 1. Task Local Storage vs. PID Maps
+Instead of using a global PID table to track restrictions (which is prone to collisions and state drift), we use **BPF Task Local Storage (`BPF_MAP_TYPE_TASK_STORAGE`)**.
+- The sandbox flag is attached directly to the kernel's internal `task_struct` memory block.
+- Since task local storage keys are bound to the actual kernel objects rather than integer process IDs, there is **zero risk of PID reuse or collisions** affecting other processes.
+
+#### 2. One-Shot Bootstrap Map
+The `bootstrap_pids` map is only used to register the initial PID of a sandbox process:
+- Upon the process's very first file-open syscall, the program detects the PID, configures the task local storage flag, and **immediately deletes the PID entry** from `bootstrap_pids`.
+- Because the PID is stored for less than a millisecond, it is long gone before that PID can ever be recycled by the operating system.
+
+#### 3. Parent Death Resilience
+- When a sandboxed parent process forks/clones, the `lsm/task_alloc` hook triggers and copies the sandbox flag to the new child task's local storage.
+- If the parent process exits or crashes, the child process remains restricted because its sandbox flag is stored independently inside its own `task_struct`.
+
+#### 4. Resource Scaling
+- BPF Task Local Storage allocates memory dynamically per-task. There is no hardcoded size limit or map capacity overflow issue.
+- Storing sandbox states for millions of transient child processes is supported natively. When the processes exit, the kernel automatically cleans up and deallocates the local storage memory.

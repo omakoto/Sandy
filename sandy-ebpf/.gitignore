@@ -1,0 +1,3 @@
+# Build artifacts and temporary files
+sandy_lsm.bpf.o
+vmlinux.h
