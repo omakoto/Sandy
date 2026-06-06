@@ -80,10 +80,14 @@ run_test "File created in sandbox is visible on host" \
 rm -f "$HOME/sandy-test-visibility-check"
 
 # 9. Test git status inside sandbox does not report dot_ssh files as deleted
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
-if [ -n "$REPO_ROOT" ]; then
+PARENT_REPO=$(git -C ../.. rev-parse --show-toplevel 2>/dev/null || true)
+if [ -n "$PARENT_REPO" ]; then
   run_test "Git status does not show hidden dot_ssh files as deleted" \
-    "! (./sandy git -C \"$REPO_ROOT\" status --porcelain | grep -E \"^( D|D ) .*dot_ssh\")"
+    "! (./sandy git -C \"$PARENT_REPO\" status --porcelain | grep -E \"^( D|D ) .*dot_ssh\")"
+
+  # 10. Test git status inside sandbox reports dot_ssh files as deleted when wrapper is disabled (-N)
+  run_test "Git status shows hidden dot_ssh files as deleted with -N" \
+    "./sandy -N git -C \"$PARENT_REPO\" status --porcelain | grep -q -E \"^( D|D ) .*dot_ssh\""
 fi
 
 if [ "$failed" -eq 0 ]; then

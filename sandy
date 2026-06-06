@@ -15,6 +15,47 @@ if [ -z "${HOME:-}" ]; then
   exit 1
 fi
 
+# Parse options for sandy itself
+ENABLE_GIT_WRAPPER=true
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [OPTIONS] [--] [COMMAND [ARGS...]]
+
+Create a lightweight sandbox hiding ~/.ssh and ~/.config.
+
+Options:
+  -N          Disable the git wrapper (which prevents VFS-isolated paths from appearing as deleted in git status).
+  -h, --help  Show this help message.
+
+If COMMAND is specified, it is executed inside the sandbox.
+Otherwise, an interactive bash shell is launched.
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -N)
+      ENABLE_GIT_WRAPPER=false
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      break
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
 # Regex for subdirectories and files inside ~/.config to whitelist (keep in sandbox)
 DEFAULT_CONFIG_WHITELIST_REGEX="^("
 DEFAULT_CONFIG_WHITELIST_REGEX+="gtk.*|git|nvim|gh|dconf|meld"
@@ -72,17 +113,18 @@ if [ -d "$HOME/.config" ]; then
   done
 fi
 
-# Create a temporary directory for the git wrapper script
-sandy_temp_bin_dir=$(mktemp -d /tmp/sandy-bin.XXXXXX)
+if [ "$ENABLE_GIT_WRAPPER" = true ]; then
+  # Create a temporary directory for the git wrapper script
+  sandy_temp_bin_dir=$(mktemp -d /tmp/sandy-bin.XXXXXX)
 
-# Register cleanup on exit
-cleanup() {
-  rm -rf "$sandy_temp_bin_dir"
-}
-trap cleanup EXIT
+  # Register cleanup on exit
+  cleanup() {
+    rm -rf "$sandy_temp_bin_dir"
+  }
+  trap cleanup EXIT
 
-# Write the git wrapper script
-cat << 'EOF' > "$sandy_temp_bin_dir/git"
+  # Write the git wrapper script
+  cat << 'EOF' > "$sandy_temp_bin_dir/git"
 #!/usr/bin/env bash
 REAL_GIT=$(type -ap git | grep -v "/tmp/sandy-bin" | head -n 1)
 
@@ -155,11 +197,12 @@ fi
 
 exec "$REAL_GIT" "$@"
 EOF
-chmod +x "$sandy_temp_bin_dir/git"
+  chmod +x "$sandy_temp_bin_dir/git"
 
-# Export variables for the git wrapper
-export PATH="$sandy_temp_bin_dir:$PATH"
-export SANDY_HIDDEN_DIRS="${hidden_paths[*]:-}"
+  # Export variables for the git wrapper
+  export PATH="$sandy_temp_bin_dir:$PATH"
+  export SANDY_HIDDEN_DIRS="${hidden_paths[*]:-}"
+fi
 
 # Run bubblewrap
 if [ $# -eq 0 ]; then
