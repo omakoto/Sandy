@@ -21,43 +21,30 @@ DEFAULT_CONFIG_WHITELIST_REGEX+="gtk.*|git|nvim|gh"
 DEFAULT_CONFIG_WHITELIST_REGEX+=")$"
 CONFIG_WHITELIST_REGEX="${CONFIG_WHITELIST_REGEX:-$DEFAULT_CONFIG_WHITELIST_REGEX}"
 
+# Resolve real path of HOME to handle any symlinks robustly
+real_home=$(readlink -f "$HOME")
+
 # Build bubblewrap arguments
 bwrap_args=(
   --bind / /
   --dev-bind /dev /dev
-  --tmpfs "$HOME"
+  --bind "$real_home" "$real_home"
 )
 
-# Populate $HOME, excluding .ssh and .config
-# Use nullglob/dotglob to safely iterate over all files, including hidden ones
-shopt -s nullglob dotglob
-
-for entry in "$HOME"/*; do
-  name="${entry##*/}"
-  
-  # Skip current and parent directories (just in case)
-  if [ "$name" = "." ] || [ "$name" = ".." ]; then
-    continue
-  fi
-  
-  # Exclude .ssh and .config
-  if [ "$name" = ".ssh" ] || [ "$name" = ".config" ]; then
-    continue
-  fi
-  
-  # Recreate symlinks, bind mount files/directories
-  if [ -L "$entry" ]; then
-    target=$(readlink "$entry")
-    bwrap_args+=(--symlink "$target" "$entry")
-  else
-    bwrap_args+=(--bind "$entry" "$entry")
-  fi
-done
+# Hide .ssh if it exists by mounting a tmpfs over its real path
+if [ -e "$HOME/.ssh" ] || [ -L "$HOME/.ssh" ]; then
+  real_ssh=$(readlink -f "$HOME/.ssh")
+  bwrap_args+=(--tmpfs "$real_ssh")
+fi
 
 # Populate whitelisted entries from ~/.config
 if [ -d "$HOME/.config" ]; then
-  # Ensure the directory exists in the sandbox
-  bwrap_args+=(--dir "$HOME/.config")
+  # Mount a tmpfs over the real path of ~/.config to hide non-whitelisted entries
+  real_config=$(readlink -f "$HOME/.config")
+  bwrap_args+=(--tmpfs "$real_config")
+
+  # Use nullglob/dotglob to safely iterate over all files, including hidden ones
+  shopt -s nullglob dotglob
 
   for entry in "$HOME/.config"/*; do
     name="${entry##*/}"
@@ -69,11 +56,12 @@ if [ -d "$HOME/.config" ]; then
 
     # Bind mount or symlink only whitelisted subdirectories and files matching the regex
     if [[ "$name" =~ $CONFIG_WHITELIST_REGEX ]]; then
+      dest="$real_config/$name"
       if [ -L "$entry" ]; then
         target=$(readlink "$entry")
-        bwrap_args+=(--symlink "$target" "$entry")
+        bwrap_args+=(--symlink "$target" "$dest")
       else
-        bwrap_args+=(--bind "$entry" "$entry")
+        bwrap_args+=(--bind "$entry" "$dest")
       fi
     fi
   done

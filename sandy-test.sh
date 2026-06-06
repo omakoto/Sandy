@@ -53,7 +53,7 @@ run_test "Direct execution (echo ok)" '[ "$(./sandy echo ok)" = "ok" ]'
 run_test "Bash -c option" '[ "$(./sandy -c "echo ok")" = "ok" ]'
 
 # 3. Test .ssh exclusion
-run_test ".ssh does not exist" './sandy -c "[ ! -e \"\$HOME/.ssh\" ]"'
+run_test ".ssh is empty or does not exist" './sandy -c "[ ! -e \"\$HOME/.ssh\" ] || [ -z \"\$(ls -A \"\$HOME/.ssh\")\" ]"'
 
 # 4. Test .config whitelisting
 run_test ".config/sandy-test-whitelist-ok exists in sandbox" \
@@ -72,6 +72,12 @@ fi
 
 # 7. Test workspace files are accessible
 run_test "Workspace files visible" './sandy -c "[ -f \"\$(pwd)/sandy\" ]"'
+
+# 8. Test file creation visibility on host
+rm -f "$HOME/sandy-test-visibility-check"
+run_test "File created in sandbox is visible on host" \
+  './sandy touch "$HOME/sandy-test-visibility-check" && [ -f "$HOME/sandy-test-visibility-check" ]'
+rm -f "$HOME/sandy-test-visibility-check"
 
 if [ "$failed" -eq 0 ]; then
   echo -e "\n${GREEN}All tests passed!${NC}"
