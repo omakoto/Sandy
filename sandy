@@ -6,7 +6,11 @@ set -euo pipefail
 cd "$(dirname "$(readlink -f $0)")"
 
 
-
+# Check if bwrap is installed
+if ! command -v bwrap >/dev/null 2>&1; then
+  echo "Error: bubblewrap (bwrap) is not installed." >&2
+  exit 1
+fi
 
 # Ensure HOME is set
 if [ -z "${HOME:-}" ]; then
@@ -16,7 +20,6 @@ fi
 
 # Parse options for sandy itself
 ENABLE_GIT_WRAPPER=true
-USE_EBPF=false
 
 usage() {
   cat <<EOF
@@ -25,7 +28,6 @@ Usage: $(basename "$0") [OPTIONS] [--] [COMMAND [ARGS...]]
 Create a lightweight sandbox hiding ~/.ssh and ~/.config.
 
 Options:
-  -E          Use the eBPF LSM sandbox driver instead of bubblewrap.
   -N          Disable the git wrapper (which prevents VFS-isolated paths from appearing as deleted in git status).
   -h, --help  Show this help message.
 
@@ -36,10 +38,6 @@ EOF
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    -E)
-      USE_EBPF=true
-      shift
-      ;;
     -N)
       ENABLE_GIT_WRAPPER=false
       shift
@@ -52,22 +50,14 @@ while [ $# -gt 0 ]; do
       shift
       break
       ;;
+    -*)
+      break
+      ;;
     *)
       break
       ;;
   esac
 done
-
-# If using eBPF sandbox driver, handle it here and exit
-if [ "$USE_EBPF" = true ]; then
-  exec "$(dirname "$(readlink -f "$0")")/sandy-ebpf/sandy-ebpf" "$@"
-fi
-
-# bubblewrap mode checks and setup
-if ! command -v bwrap >/dev/null 2>&1; then
-  echo "Error: bubblewrap (bwrap) is not installed." >&2
-  exit 1
-fi
 
 # Regex for subdirectories and files inside ~/.config to whitelist (keep in sandbox)
 DEFAULT_CONFIG_WHITELIST_REGEX="^("
