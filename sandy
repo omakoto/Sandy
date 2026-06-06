@@ -16,10 +16,10 @@ if [ -z "${HOME:-}" ]; then
 fi
 
 # Regex for subdirectories and files inside ~/.config to whitelist (keep in sandbox)
-DEFAULT_WHITELIST_REGEX="^("
-DEFAULT_WHITELIST_REGEX+="gtk.*|git|nvim|gh"
-DEFAULT_WHITELIST_REGEX+=")$"
-CONFIG_WHITELIST_REGEX="${CONFIG_WHITELIST_REGEX:-$DEFAULT_WHITELIST_REGEX}"
+DEFAULT_CONFIG_WHITELIST_REGEX="^("
+DEFAULT_CONFIG_WHITELIST_REGEX+="gtk.*|git|nvim|gh"
+DEFAULT_CONFIG_WHITELIST_REGEX+=")$"
+CONFIG_WHITELIST_REGEX="${CONFIG_WHITELIST_REGEX:-$DEFAULT_CONFIG_WHITELIST_REGEX}"
 
 # Build bubblewrap arguments
 bwrap_args=(
