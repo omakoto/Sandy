@@ -11,6 +11,28 @@ NC='\033[0m'
 echo "Running tests for sandy..."
 failed=0
 
+# Setup temporary test directories in host's ~/.config for testing whitelisting
+HOST_CONFIG_DIR="$HOME/.config"
+TEST_WHITE_DIR="$HOST_CONFIG_DIR/sandy-test-whitelist-ok"
+TEST_BLOCK_DIR="$HOST_CONFIG_DIR/sandy-test-whitelist-blocked"
+CONFIG_DIR_CREATED=false
+
+if [ ! -d "$HOST_CONFIG_DIR" ]; then
+  mkdir -p "$HOST_CONFIG_DIR"
+  CONFIG_DIR_CREATED=true
+fi
+
+mkdir -p "$TEST_WHITE_DIR"
+mkdir -p "$TEST_BLOCK_DIR"
+
+cleanup() {
+  rm -rf "$TEST_WHITE_DIR" "$TEST_BLOCK_DIR"
+  if [ "$CONFIG_DIR_CREATED" = true ]; then
+    rmdir "$HOST_CONFIG_DIR" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
 run_test() {
   local name="$1"
   local cmd="$2"
@@ -33,8 +55,12 @@ run_test "Bash -c option" '[ "$(./sandy -c "echo ok")" = "ok" ]'
 # 3. Test .ssh exclusion
 run_test ".ssh does not exist" './sandy -c "[ ! -e \"\$HOME/.ssh\" ]"'
 
-# 4. Test .config exclusion
-run_test ".config does not exist" './sandy -c "[ ! -e \"\$HOME/.config\" ]"'
+# 4. Test .config whitelisting
+run_test ".config/sandy-test-whitelist-ok exists in sandbox" \
+  'CONFIG_WHITELIST_REGEX="sandy-test-whitelist-ok" ./sandy -c "[ -d \"\$HOME/.config/sandy-test-whitelist-ok\" ]"'
+
+run_test ".config/sandy-test-whitelist-blocked does not exist in sandbox" \
+  'CONFIG_WHITELIST_REGEX="sandy-test-whitelist-ok" ./sandy -c "[ ! -e \"\$HOME/.config/sandy-test-whitelist-blocked\" ]"'
 
 # 5. Test device nodes are writable (/dev/null)
 run_test "/dev/null is writable" './sandy -c "echo test > /dev/null"'
