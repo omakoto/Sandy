@@ -16,8 +16,6 @@ if [ -z "${HOME:-}" ]; then
 fi
 
 # Parse options for sandy itself
-ENABLE_GIT_WRAPPER=true
-
 usage() {
   cat <<EOF
 Usage: $(basename "$0") [OPTIONS] [--] [COMMAND [ARGS...]]
@@ -25,7 +23,6 @@ Usage: $(basename "$0") [OPTIONS] [--] [COMMAND [ARGS...]]
 Create a lightweight sandbox hiding ~/.ssh and ~/.config.
 
 Options:
-  -N          Disable the git wrapper (which prevents VFS-isolated paths from appearing as deleted in git status).
   -h, --help  Show this help message.
 
 If COMMAND is specified, it is executed inside the sandbox.
@@ -35,10 +32,6 @@ EOF
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    -N)
-      ENABLE_GIT_WRAPPER=false
-      shift
-      ;;
     -h|--help)
       usage
       exit 0
@@ -62,30 +55,22 @@ DEFAULT_CONFIG_WHITELIST_REGEX+="gtk.*|git|nvim|gh|dconf|meld"
 DEFAULT_CONFIG_WHITELIST_REGEX+=")$"
 CONFIG_WHITELIST_REGEX="${CONFIG_WHITELIST_REGEX:-$DEFAULT_CONFIG_WHITELIST_REGEX}"
 
-# Resolve real path of HOME to handle any symlinks robustly
-real_home=$(readlink -f "$HOME")
-
 # Build bubblewrap arguments
 bwrap_args=(
   --bind / /
   --dev-bind /dev /dev
-  --bind "$real_home" "$real_home"
+  --bind "$HOME" "$HOME"
 )
 
-hidden_paths=()
-
-# Hide .ssh if it exists by mounting a tmpfs over its real path
-if [ -e "$HOME/.ssh" ] || [ -L "$HOME/.ssh" ]; then
-  real_ssh=$(readlink -f "$HOME/.ssh")
-  bwrap_args+=(--tmpfs "$real_ssh")
-  hidden_paths+=("$real_ssh")
+# Hide .ssh if it exists by mounting a tmpfs over it
+if [ -d "$HOME/.ssh" ]; then
+  bwrap_args+=(--tmpfs "$HOME/.ssh")
 fi
 
 # Populate whitelisted entries from ~/.config
 if [ -d "$HOME/.config" ]; then
-  # Mount a tmpfs over the real path of ~/.config to hide non-whitelisted entries
-  real_config=$(readlink -f "$HOME/.config")
-  bwrap_args+=(--tmpfs "$real_config")
+  # Mount a tmpfs over ~/.config to hide non-whitelisted entries
+  bwrap_args+=(--tmpfs "$HOME/.config")
 
   # Use nullglob/dotglob to safely iterate over all files, including hidden ones
   shopt -s nullglob dotglob
@@ -98,17 +83,10 @@ if [ -d "$HOME/.config" ]; then
       continue
     fi
 
-    # Bind mount or symlink only whitelisted subdirectories and files matching the regex
+    # Bind mount only whitelisted subdirectories and files matching the regex
     if [[ "$name" =~ $CONFIG_WHITELIST_REGEX ]]; then
-      dest="$real_config/$name"
-      if [ -L "$entry" ]; then
-        target=$(readlink "$entry")
-        bwrap_args+=(--symlink "$target" "$dest")
-      else
-        bwrap_args+=(--bind "$entry" "$dest")
-      fi
-    else
-      hidden_paths+=("$(readlink -f "$entry")")
+      dest="$HOME/.config/$name"
+      bwrap_args+=(--bind "$entry" "$dest")
     fi
   done
 fi
@@ -121,85 +99,6 @@ cleanup() {
   rm -rf "$sandy_temp_bin_dir"
 }
 trap cleanup EXIT
-
-# Write the git wrapper script if enabled
-if [ "$ENABLE_GIT_WRAPPER" = true ]; then
-  cat << 'EOF' > "$sandy_temp_bin_dir/git"
-#!/usr/bin/env bash
-REAL_GIT=$(type -ap git | grep -v "/tmp/sandy-bin" | head -n 1)
-
-if [ -z "$REAL_GIT" ]; then
-  echo "Error: git command not found." >&2
-  exit 127
-fi
-
-# Parse git options to find the correct repository path
-git_opts=()
-i=1
-while [ $i -le $# ]; do
-  eval "val=\${$i}"
-  case "$val" in
-    -C)
-      next=$((i + 1))
-      eval "path=\${$next}"
-      git_opts+=("-C" "$path")
-      i=$((i + 2))
-      ;;
-    --git-dir=*)
-      git_opts+=("$val")
-      i=$((i + 1))
-      ;;
-    --work-tree=*)
-      git_opts+=("$val")
-      i=$((i + 1))
-      ;;
-    *)
-      break
-      ;;
-  esac
-done
-
-if ! REPO_PATH=$("$REAL_GIT" "${git_opts[@]}" rev-parse --show-toplevel 2>/dev/null); then
-  exec "$REAL_GIT" "$@"
-fi
-
-FOUND_HIDDEN=false
-for hidden in $SANDY_HIDDEN_DIRS; do
-  if [[ "$hidden" == "$REPO_PATH"/* ]] || [ "$hidden" = "$REPO_PATH" ]; then
-    FOUND_HIDDEN=true
-    break
-  fi
-done
-
-if [ "$FOUND_HIDDEN" = false ]; then
-  exec "$REAL_GIT" "$@"
-fi
-
-TEMP_INDEX="/tmp/sandy-git-index-$(echo -n "$REPO_PATH" | tr '/' '_')"
-REAL_INDEX="$REPO_PATH/.git/index"
-
-if [ -f "$REAL_INDEX" ]; then
-  if [ ! -f "$TEMP_INDEX" ] || [ "$REAL_INDEX" -nt "$TEMP_INDEX" ]; then
-    cp "$REAL_INDEX" "$TEMP_INDEX"
-    for hidden in $SANDY_HIDDEN_DIRS; do
-      if [[ "$hidden" == "$REPO_PATH"/* ]] || [ "$hidden" = "$REPO_PATH" ]; then
-        rel_path="${hidden#$REPO_PATH/}"
-        if [ "$hidden" = "$REPO_PATH" ]; then
-          rel_path="."
-        fi
-        "$REAL_GIT" --git-dir="$REPO_PATH/.git" --work-tree="$REPO_PATH" ls-files -z "$rel_path" | \
-          GIT_INDEX_FILE="$TEMP_INDEX" xargs -0 -r "$REAL_GIT" --git-dir="$REPO_PATH/.git" --work-tree="$REPO_PATH" update-index --skip-worktree
-      fi
-    done
-  fi
-  export GIT_INDEX_FILE="$TEMP_INDEX"
-fi
-
-exec "$REAL_GIT" "$@"
-EOF
-  chmod +x "$sandy_temp_bin_dir/git"
-  export SANDY_HIDDEN_DIRS="${hidden_paths[*]:-}"
-fi
 
 # Write wrappers for VS Code commands to fail explicitly and protect sandbox security
 for cmd in code code-insiders codium; do
