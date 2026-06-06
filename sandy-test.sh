@@ -8,7 +8,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'
 
-echo "Running tests for sandy.sh..."
+echo "Running tests for sandy..."
 failed=0
 
 run_test() {
@@ -25,27 +25,27 @@ run_test() {
 }
 
 # 1. Test direct command execution
-run_test "Direct execution (echo ok)" '[ "$(./sandy.sh echo ok)" = "ok" ]'
+run_test "Direct execution (echo ok)" '[ "$(./sandy echo ok)" = "ok" ]'
 
 # 2. Test bash option execution
-run_test "Bash -c option" '[ "$(./sandy.sh -c "echo ok")" = "ok" ]'
+run_test "Bash -c option" '[ "$(./sandy -c "echo ok")" = "ok" ]'
 
 # 3. Test .ssh exclusion
-run_test ".ssh does not exist" './sandy.sh -c "[ ! -e \"\$HOME/.ssh\" ]"'
+run_test ".ssh does not exist" './sandy -c "[ ! -e \"\$HOME/.ssh\" ]"'
 
 # 4. Test .config exclusion
-run_test ".config does not exist" './sandy.sh -c "[ ! -e \"\$HOME/.config\" ]"'
+run_test ".config does not exist" './sandy -c "[ ! -e \"\$HOME/.config\" ]"'
 
 # 5. Test device nodes are writable (/dev/null)
-run_test "/dev/null is writable" './sandy.sh -c "echo test > /dev/null"'
+run_test "/dev/null is writable" './sandy -c "echo test > /dev/null"'
 
 # 6. Test other $HOME entries exist (e.g., .bashrc if it exists on host)
 if [ -e "$HOME/.bashrc" ]; then
-  run_test ".bashrc exists in sandbox" './sandy.sh -c "[ -e \"\$HOME/.bashrc\" ]"'
+  run_test ".bashrc exists in sandbox" './sandy -c "[ -e \"\$HOME/.bashrc\" ]"'
 fi
 
 # 7. Test workspace files are accessible
-run_test "Workspace files visible" './sandy.sh -c "[ -f \"\$(pwd)/sandy.sh\" ]"'
+run_test "Workspace files visible" './sandy -c "[ -f \"\$(pwd)/sandy\" ]"'
 
 if [ "$failed" -eq 0 ]; then
   echo -e "\n${GREEN}All tests passed!${NC}"

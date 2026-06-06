@@ -7,21 +7,21 @@ Create a light weight sandbox to hide `~/.ssh/` and `~/.config/`.
 ### Interactive Shell
 Launch an interactive `bash` shell inside the sandbox:
 ```bash
-./sandy.sh
+./sandy
 ```
 
 ### Direct Command Execution
 Run a command directly in the sandbox:
 ```bash
-./sandy.sh echo "hello world"
+./sandy echo "hello world"
 ```
 
 ### Executing Shell Commands
 Run a shell command with shell features (pipes, redirects, built-ins, etc.):
 ```bash
-./sandy.sh -c "echo hello > /dev/null"
+./sandy -c "echo hello > /dev/null"
 # or
-./sandy.sh bash -c "ls -la | grep src"
+./sandy bash -c "ls -la | grep src"
 ```
 
 ## How it works
