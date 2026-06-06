@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+MAP_PATH="/sys/fs/bpf/sandy/bootstrap_pids"
+if [ ! -e "$MAP_PATH" ]; then
+  echo "Error: Sandy eBPF filter is not installed or loaded. Please run sandy-ebpf/install.sh first." >&2
+  exit 1
+fi
+if ! command -v bpftool >/dev/null 2>&1; then
+  echo "Error: bpftool is required but not installed." >&2
+  exit 1
+fi
+
+# Prepare target command and arguments
+if [ $# -eq 0 ]; then
+  set -- /bin/bash
+elif [[ "$1" == -* ]]; then
+  set -- /bin/bash "$@"
+fi
+
+# Register current process PID in the BPF map
+pid=$$
+key_bytes=$(printf "%08x" $pid | sed 's/\(..\)\(..\)\(..\)\(..\)/\4 \3 \2 \1/')
+
+# Try to update BPF map, using sudo if needed
+if ! bpftool map update pinned "$MAP_PATH" key $key_bytes value 01 2>/dev/null; then
+  if ! sudo bpftool map update pinned "$MAP_PATH" key $key_bytes value 01; then
+    echo "Error: Failed to register PID in BPF map." >&2
+    exit 1
+  fi
+fi
+
+# Run target command (LSM BPF blocks access on first file open)
+exec "$@"
