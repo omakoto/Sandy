@@ -1,6 +1,6 @@
 # Sandy
 
-Create a light weight sandbox to hide `~/.ssh/` and `~/.config/`.
+Create a lightweight sandbox to hide `~/.config/`.
 
 ## Usage
 
@@ -30,8 +30,7 @@ The sandbox is implemented using **Bubblewrap** (`bwrap`), an unprivileged sandb
 2. **Device node access**: The host `/dev` directory is bind-mounted with device permissions enabled (`--dev-bind /dev /dev`), ensuring access to standard nodes like `/dev/null` and pseudo-terminals (`/dev/pts`).
 3. **Home directory mapping**: The user's home directory (`$HOME`) is bind-mounted directly into the sandbox (`--bind $HOME $HOME`), making any new file/directory creations or deletions directly visible on the host.
 4. **Targeted isolation**:
-   - If `~/.ssh` exists, it is overlaid with a temporary, in-memory `tmpfs` filesystem (`--tmpfs $HOME/.ssh`), rendering its host contents inaccessible inside the sandbox.
-   - If `~/.config` exists, it is overlaid with a `tmpfs` (`--tmpfs $HOME/.config`), and only whitelisted entries (by default `gtk.*|git|nvim|gh|dconf|meld`) are selectively bind-mounted or symlinked back into the sandbox.
+   - If `~/.config` exists, it is overlaid with a `tmpfs` (`--tmpfs $HOME/.config`), and only whitelisted entries (by default `gtk.*|git|nvim|gh|dconf|meld`) are selectively bind-mounted back into the sandbox.
 
 ## Sandbox Command Options
 You can configure the sandbox behavior when launching it:

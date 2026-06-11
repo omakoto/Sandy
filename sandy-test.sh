@@ -52,8 +52,10 @@ run_test "Direct execution (echo ok)" '[ "$(./sandy echo ok)" = "ok" ]'
 # 2. Test bash option execution
 run_test "Bash -c option" '[ "$(./sandy -c "echo ok")" = "ok" ]'
 
-# 3. Test .ssh exclusion
-run_test ".ssh is empty or does not exist" './sandy -c "[ ! -e \"\$HOME/.ssh\" ] || [ -z \"\$(ls -A \"\$HOME/.ssh\")\" ]"'
+# 3. Test .ssh inclusion
+if [ -d "$HOME/.ssh" ]; then
+  run_test ".ssh is accessible in sandbox" './sandy -c "[ -d \"\$HOME/.ssh\" ]"'
+fi
 
 # 4. Test .config whitelisting
 run_test ".config/sandy-test-whitelist-ok exists in sandbox" \
