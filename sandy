@@ -110,6 +110,8 @@ done
 # Export PATH for wrapper scripts
 export PATH="$sandy_temp_bin_dir:$PATH"
 
+export IN_SANDY=1
+
 # Run bubblewrap
 if [ $# -eq 0 ]; then
   bwrap "${bwrap_args[@]}" /bin/bash
